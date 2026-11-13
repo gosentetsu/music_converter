@@ -13,6 +13,9 @@ python3 ogg2mp3.py .
 # 转换单个文件，指定输出目录
 python3 ogg2mp3.py song.ogg -o converted/
 
+# 用外部图片作为封面（适用于源文件封面是放大图的情况）
+python3 ogg2mp3.py song.ogg --cover cover-800.jpg --overwrite
+
 # 递归、覆盖已有文件、查看将要做什么
 python3 ogg2mp3.py music/ -r --overwrite
 python3 ogg2mp3.py music/ -r --dry-run
@@ -43,3 +46,15 @@ python3 ogg2mp3.py music/ -r --dry-run
    让 Finder 图标也保持一致。
 
 如果源文件本身既没有内嵌封面也没有自定义图标，输出 MP3 也不会有封面。
+
+### 封面清晰度与 `--cover`
+
+工具会自动选择能拿到的最大封面，但“最大尺寸”不一定等于“最清晰”：一些播放器会把小图
+放大后写进 icns（例如 1024×1024 实际是 512×512 放大的）。这种情况下可以用
+`--cover` 指定一张真正的原图：
+
+```bash
+python3 ogg2mp3.py song.ogg --cover cover-800.jpg --overwrite
+```
+
+`--cover` 会按图片原始字节写入 `APIC`，不重新压缩；对多个输入文件会统一使用这张图。

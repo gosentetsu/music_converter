@@ -625,19 +625,58 @@ def describe_cover(picture: dict | None) -> str:
     return f"cover {picture['mime']}{dimensions}, {size_text}{origin_text}"
 
 
+def load_cover_image(path: Path) -> dict:
+    """Load an external image file to use as cover art."""
+    if not path.is_file():
+        raise ConversionError(f"cover image not found: {path}")
+    data = path.read_bytes()
+    if not data:
+        raise ConversionError(f"cover image is empty: {path}")
+    width = height = None
+    proc = run(
+        [
+            FFPROBE,
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "stream=width,height",
+            "-of",
+            "csv=p=0",
+            str(path),
+        ]
+    )
+    if proc.returncode != 0 or not proc.stdout.strip():
+        raise ConversionError(f"not a readable image: {path}")
+    parts = proc.stdout.strip().split(",")
+    if len(parts) >= 2 and parts[0].isdigit() and parts[1].isdigit():
+        width, height = int(parts[0]), int(parts[1])
+    return {
+        "type": 3,
+        "mime": guess_mime(data),
+        "description": "Cover (front)",
+        "width": width,
+        "height": height,
+        "data": data,
+        "source": "external file",
+    }
+
+
 def convert_file(
     source: Path,
     destination: Path,
     bitrate: str,
     overwrite: bool,
     dry_run: bool,
+    cover_override: dict | None = None,
 ) -> tuple[bool, str]:
     if destination.exists() and not overwrite and not dry_run:
         return False, f"skipped (exists): {destination.name}"
 
     info = probe(source)
     tags = collect_tags(info)
-    picture = extract_cover(source, info)
+    picture = cover_override if cover_override else extract_cover(source, info)
 
     if dry_run:
         summary = ", ".join(f"{k}={v}" for k, v in sorted(tags.items()))
@@ -739,7 +778,18 @@ def main() -> int:
     parser.add_argument(
         "--dry-run", action="store_true", help="show what would be converted, without writing"
     )
+    parser.add_argument(
+        "--cover",
+        metavar="IMAGE",
+        help="use this image as cover art for all converted files",
+    )
     args = parser.parse_args()
+
+    try:
+        cover_override = load_cover_image(Path(args.cover).expanduser()) if args.cover else None
+    except (ConversionError, OSError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
 
     files = collect_inputs(args.paths, args.recursive)
     if not files:
@@ -755,7 +805,12 @@ def main() -> int:
         )
         try:
             ok, message = convert_file(
-                source, destination, args.bitrate, args.overwrite, args.dry_run
+                source,
+                destination,
+                args.bitrate,
+                args.overwrite,
+                args.dry_run,
+                cover_override,
             )
         except ConversionError as exc:
             failed += 1
